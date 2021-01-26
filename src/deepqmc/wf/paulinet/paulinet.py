@@ -144,7 +144,7 @@ class PauliNet(WaveFunction):
             n_orbitals,
             cusp_correction=cusp_correction,
             rc_scaling=rc_scaling,
-        )
+        )  ## DOES NOT KNOW ANYTHING ABOUT PYSCF
         self.cusp_same, self.cusp_anti = (
             (ElectronicAsymptotic(cusp=cusp, alpha=cusp_alpha) for cusp in (0.25, 0.5))
             if cusp_electrons
@@ -292,7 +292,7 @@ class PauliNet(WaveFunction):
         basis = GTOBasis.from_pyscf(mf.mol)
         wf = cls(mol, basis, **kwargs)
         if init_weights:
-            wf.mo.init_from_pyscf(mf, freeze_mos=freeze_mos)
+            wf.mo.init_from_pyscf(mf, freeze_mos=freeze_mos)  # CREATE THE HF ORBITALS
             if confs is not None:
                 wf.confs.detach().copy_(confs)
                 if len(confs) > 1:

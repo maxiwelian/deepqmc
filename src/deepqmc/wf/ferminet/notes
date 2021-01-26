@@ -1,0 +1,23 @@
+
+Molecule = mol
+sloglindet -> torchext
+typing -> mypy check for consistency
+
+wf.mo.init_from_pyscf(mf, freeze_mos=freeze_mos)  # CREATE THE HF ORBITALS
+## DOES NOT KNOW ANYTHING ABOUT PYSCF
+
+
+What function extracts the hf orbitals from pyscf?
+
+what does the sloglindet do?
+
+what should I pass to it?
+
+what is conf coeff?
+
+how to get r_atoms out of mol?
+
+What other attributes does the WaveFunction need to train?
+
+What does , *, argument do?
+

@@ -14,7 +14,7 @@ from .cusp import CuspCorrection, ElectronicAsymptotic
 from .gto import GTOBasis
 from .molorb import MolecularOrbital
 from .omni import OmniSchNet
-from .pyscfext import pyscf_from_mol
+from src.deepqmc.pyscfext import pyscf_from_mol
 
 __version__ = '0.2.0'
 __all__ = ['PauliNet']
@@ -144,7 +144,7 @@ class PauliNet(WaveFunction):
             n_orbitals,
             cusp_correction=cusp_correction,
             rc_scaling=rc_scaling,
-        )  ## DOES NOT KNOW ANYTHING ABOUT PYSCF
+        )
         self.cusp_same, self.cusp_anti = (
             (ElectronicAsymptotic(cusp=cusp, alpha=cusp_alpha) for cusp in (0.25, 0.5))
             if cusp_electrons

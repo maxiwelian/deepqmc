@@ -163,6 +163,23 @@ class FermiNet(WaveFunction):
 
         return (log_psi.squeeze(), sign.squeeze()) if self.return_log else (log_psi, )
 
+    @classmethod
+    def DEFAULTS(cls):
+        from .omni import Backflow, Jastrow
+        from .schnet import ElectronicSchNet, SubnetFactory
+
+        return {
+            (cls.from_hf, 'kwargs'): cls.from_pyscf,
+            (cls.from_pyscf, 'kwargs'): cls,
+            (cls, 'omni_kwargs'): cls.OMNI_FACTORIES,
+            (OmniSchNet, 'schnet_kwargs'): ElectronicSchNet,
+            (OmniSchNet, 'mf_schnet_kwargs'): (ElectronicSchNet, ['version']),
+            (OmniSchNet, 'subnet_kwargs'): SubnetFactory,
+            (OmniSchNet, 'mf_subnet_kwargs'): SubnetFactory,
+            (OmniSchNet, 'jastrow_kwargs'): Jastrow,
+            (OmniSchNet, 'backflow_kwargs'): Backflow,
+        }
+
 
 def compute_inputs(r_electrons: torch.Tensor,
                    n_samples: int,

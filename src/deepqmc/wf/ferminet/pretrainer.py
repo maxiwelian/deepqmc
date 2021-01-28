@@ -13,6 +13,8 @@ from deepqmc.wf.paulinet.gto import GTOBasis
 from deepqmc.physics import pairwise_diffs, local_energy
 
 
+__all__ = ['Pretrainer']
+
 class Pretrainer(nn.Module):
     r""" Implements the FermiNet wave function Ansatz pretraining based on [pfau2020ab]
 

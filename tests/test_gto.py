@@ -7,7 +7,7 @@ from torch.testing import assert_allclose
 
 from deepqmc.physics import pairwise_diffs
 from deepqmc.wf import PauliNet
-from deepqmc.wf.paulinet.pyscfext import eval_ao_normed
+from deepqmc.pyscfext import eval_ao_normed
 
 
 @pytest.fixture(scope='module')

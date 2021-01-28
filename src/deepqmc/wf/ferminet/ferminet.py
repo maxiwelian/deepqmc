@@ -4,26 +4,11 @@ import numpy as np
 import torch
 from torch import nn
 from torch.autograd import Function
-from deepqmc import Molecule
-from deepqmc.physics import pairwise_diffs, pairwise_distance
-from deepqmc.plugins import PLUGINS
+from typing import Tuple
+
 from deepqmc.torchext import sloglindet, triu_flat
 from deepqmc.wf import WaveFunction
 
-from deepqmc.wf.paulinet.molorb import MolecularOrbital
-from deepqmc.wf.paulinet.gto import GTOBasis
-from deepqmc.wf.paulinet.pyscfext import pyscf_from_mol
-from deepqmc.physics import pairwise_diffs, pairwise_distance
-from deepqmc.sampling import LangevinSampler, sample_wf
-
-# new packages
-import inspect
-from typing import Tuple
-
-'''
-useful resources
-type hinting in pytorch: https://pytorch.org/docs/stable/jit_language_reference.html
-'''
 
 __version__ = '0.2.0'
 __all__ = ['FermiNet']

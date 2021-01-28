@@ -9,12 +9,13 @@ from deepqmc.physics import pairwise_diffs, pairwise_distance
 from deepqmc.plugins import PLUGINS
 from deepqmc.torchext import sloglindet, triu_flat
 from deepqmc.wf import WaveFunction
+from deepqmc.pyscfext import pyscf_from_mol
 
 from .cusp import CuspCorrection, ElectronicAsymptotic
 from .gto import GTOBasis
 from .molorb import MolecularOrbital
 from .omni import OmniSchNet
-from src.deepqmc.pyscfext import pyscf_from_mol
+
 
 __version__ = '0.2.0'
 __all__ = ['PauliNet']

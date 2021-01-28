@@ -1,26 +1,16 @@
-import torch
 from torch.distributions import Normal
 import numpy as np
 from torch import nn
 from typing import Tuple
 from tqdm.auto import trange
+import torch
 
 from deepqmc import Molecule
+from deepqmc.pyscfext import eval_ao_normed, pyscf_from_mol
 from deepqmc.wf import WaveFunction
 from deepqmc.wf.paulinet.molorb import MolecularOrbital
 from deepqmc.wf.paulinet.gto import GTOBasis
-from deepqmc.wf.paulinet.pyscfext import pyscf_from_mol
 from deepqmc.physics import pairwise_diffs, local_energy
-
-
-import torch
-from deepqmc import Molecule
-from deepqmc.wf.paulinet.pyscfext import eval_ao_normed, pyscf_from_mol
-
-# mol = Molecule.from_name('H2O')
-# mf, _ = pyscf_from_mol(mol, '6-31g')
-# rs = torch.randn(100, 10, 3).double()
-# mo = (eval_ao_normed(mf.mol, rs.flatten(end_dim=1).numpy()).reshape(100, 10, -1) @ mf.mo_coeff[:, :5])
 
 
 class Pretrainer(nn.Module):
@@ -138,124 +128,6 @@ class Pretrainer(nn.Module):
             steps.set_postfix(E=f'{Es_loc.mean():.6f}')
 
             # print('iteration: ', step, ' energy: ', Es_loc.mean())
-
-
-class Pretrainer_dep(nn.Module):
-    r""" Implements the FermiNet wave function Ansatz pretraining based on [pfau2020ab]
-
-    Provides tools for pretraining the Ansatz.
-
-    .. math:
-
-    Usage:
-        wf = FermiNet(mol, n_layers, nf_hidden_single, nf_hidden_pairwise, n_determinants).cuda()
-        pretrainer = Pretrainer(mol).cuda()
-        pretrainer.pretrain(wf)
-
-    Args:
-        mol (:class:`~deepqmc.Molecule`): molecule whose wave function is represented
-        basis (str): basis for the molecular orbitals
-
-    """
-
-    def __init__(self,
-                 mol,
-                 basis: str = '6-311g',
-                 device: str = 'cuda',
-                 dtype: torch.dtype = torch.float32):
-        super(Pretrainer_dep, self).__init__()
-        self.device = device
-        self.dtype = dtype
-
-        self.atom_positions = [x.cpu().numpy() for x in mol.coords.split(1, dim=0)]
-        self.ne_atoms = [int(i) for i in mol.charges]
-
-        self.mol = mol
-        self.n_elec = int(mol.charges)
-        self.n_up = (self.n_elec + mol.spin) // 2
-        self.n_down = (self.n_elec - mol.spin) // 2
-        self.n_atoms = len(self.mol)
-        self.n_orbitals = max(self.n_up, self.n_down)  # if n_orbital is none return max of up or down
-        # cas and workdir set to None
-        mf, mc = pyscf_from_mol(mol, basis, None, None)
-        basis = GTOBasis.from_pyscf(mf.mol)  # basis from molecule from name
-        mol = Molecule(
-            mf.mol.atom_coords(),
-            mf.mol.atom_charges(),
-            mf.mol.charge,
-            mf.mol.spin,
-        )
-        self.mo = MolecularOrbital(  # create the molecular orbital
-            mol,
-            basis,
-            self.n_orbitals,
-            cusp_correction=False)
-        self.mo.init_from_pyscf(mf, freeze_mos=True)
-        self.coords = mol.coords.unsqueeze(0).to(device=device, dtype=dtype)
-
-    def compute_orbital_probability(self, samples: torch.Tensor) -> torch.Tensor:
-        up_dets, down_dets = self.hf_orbitals(samples)
-
-        spin_ups = up_dets ** 2
-        spin_downs = down_dets ** 2
-
-        p_up = torch.diagonal(spin_ups, dim1=-2, dim2=-1).prod(-1)
-        p_down = torch.diagonal(spin_downs, dim1=-2, dim2=-1).prod(-1)
-
-        probabilities = p_up * p_down
-
-        return probabilities.detach()
-
-    def hf_orbitals(self, samples: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        samples_hf = samples.view(-1, 1, 3).repeat(1, self.n_atoms, 1)
-        diffs_nuc = pairwise_diffs(torch.cat([self.coords, samples_hf]), self.coords).squeeze(1)
-        determinants = self.mo(diffs_nuc).unsqueeze(1).view(-1, self.n_elec, self.n_orbitals)
-        up_dets, down_dets = determinants.split([self.n_up, self.n_down], dim=1)
-        up_dets, down_dets = up_dets[:, :, :up_dets.shape[1]], down_dets[:, :, :down_dets.shape[1]]
-        return up_dets, down_dets
-
-    def pretrain(self,
-                 wf: WaveFunction,
-                 n_samples: int = 1024,
-                 n_steps: int = 1000):
-
-        sampler = MetropolisHastingsPretrain()
-        opt = torch.optim.Adam(list(wf.parameters())[:-3], lr=0.0001)
-        steps = trange(
-            0,  # init_step = 0
-            n_steps,
-            initial=0,
-            total=n_steps,
-            desc='pretraining',
-            disable=None,
-        )
-
-        samples = initialize_samples(self.ne_atoms, self.atom_positions, n_samples).to(device=self.device, dtype=self.dtype)
-
-        for step in steps:
-            Es_loc, _, _ = local_energy(
-                samples,
-                wf.sample(False),
-                create_graph=False,
-                keep_graph=False,
-            )
-
-            samples = sampler(wf, self, samples)
-
-            up_dets, down_dets = self.hf_orbitals(samples)
-            up_dets = tile_labels(up_dets, wf.n_determinants)
-            down_dets = tile_labels(down_dets, wf.n_determinants)
-
-            wf.pretraining = True
-            model_up_dets, model_down_dets = wf(samples)
-            wf.pretraining = False
-
-            loss = mse_error(up_dets, model_up_dets)
-            loss += mse_error(down_dets, model_down_dets)
-            wf.zero_grad()
-            loss.backward()  # in order for hook to work must call backward
-            opt.step()
-            print('iteration: ', step, ' energy: ', Es_loc.mean())
 
 
 def mse_error(targets: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
@@ -435,3 +307,126 @@ class MetropolisHastingsPretrain(nn.Module):
             self.sigma += 0.001
         else:
             self.sigma -= 0.001
+
+
+
+"""
+Below is a depreciated version of the pretrainer which works the same
+"""
+class Pretrainer_dep(nn.Module):
+    r""" Implements the FermiNet wave function Ansatz pretraining based on [pfau2020ab]
+
+    Provides tools for pretraining the Ansatz.
+
+    .. math:
+
+    Usage:
+        wf = FermiNet(mol, n_layers, nf_hidden_single, nf_hidden_pairwise, n_determinants).cuda()
+        pretrainer = Pretrainer(mol).cuda()
+        pretrainer.pretrain(wf)
+
+    Args:
+        mol (:class:`~deepqmc.Molecule`): molecule whose wave function is represented
+        basis (str): basis for the molecular orbitals
+
+    """
+
+    def __init__(self,
+                 mol,
+                 basis: str = '6-311g',
+                 device: str = 'cuda',
+                 dtype: torch.dtype = torch.float32):
+        super(Pretrainer_dep, self).__init__()
+        self.device = device
+        self.dtype = dtype
+
+        self.atom_positions = [x.cpu().numpy() for x in mol.coords.split(1, dim=0)]
+        self.ne_atoms = [int(i) for i in mol.charges]
+
+        self.mol = mol
+        self.n_elec = int(mol.charges)
+        self.n_up = (self.n_elec + mol.spin) // 2
+        self.n_down = (self.n_elec - mol.spin) // 2
+        self.n_atoms = len(self.mol)
+        self.n_orbitals = max(self.n_up, self.n_down)  # if n_orbital is none return max of up or down
+        # cas and workdir set to None
+        mf, mc = pyscf_from_mol(mol, basis, None, None)
+        basis = GTOBasis.from_pyscf(mf.mol)  # basis from molecule from name
+        mol = Molecule(
+            mf.mol.atom_coords(),
+            mf.mol.atom_charges(),
+            mf.mol.charge,
+            mf.mol.spin,
+        )
+        self.mo = MolecularOrbital(  # create the molecular orbital
+            mol,
+            basis,
+            self.n_orbitals,
+            cusp_correction=False)
+        self.mo.init_from_pyscf(mf, freeze_mos=True)
+        self.coords = mol.coords.unsqueeze(0).to(device=device, dtype=dtype)
+
+    def compute_orbital_probability(self, samples: torch.Tensor) -> torch.Tensor:
+        up_dets, down_dets = self.hf_orbitals(samples)
+
+        spin_ups = up_dets ** 2
+        spin_downs = down_dets ** 2
+
+        p_up = torch.diagonal(spin_ups, dim1=-2, dim2=-1).prod(-1)
+        p_down = torch.diagonal(spin_downs, dim1=-2, dim2=-1).prod(-1)
+
+        probabilities = p_up * p_down
+
+        return probabilities.detach()
+
+    def hf_orbitals(self, samples: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        samples_hf = samples.view(-1, 1, 3).repeat(1, self.n_atoms, 1)
+        diffs_nuc = pairwise_diffs(torch.cat([self.coords, samples_hf]), self.coords).squeeze(1)
+        determinants = self.mo(diffs_nuc).unsqueeze(1).view(-1, self.n_elec, self.n_orbitals)
+        up_dets, down_dets = determinants.split([self.n_up, self.n_down], dim=1)
+        up_dets, down_dets = up_dets[:, :, :up_dets.shape[1]], down_dets[:, :, :down_dets.shape[1]]
+        return up_dets, down_dets
+
+    def pretrain(self,
+                 wf: WaveFunction,
+                 n_samples: int = 1024,
+                 n_steps: int = 1000):
+
+        sampler = MetropolisHastingsPretrain()
+        opt = torch.optim.Adam(list(wf.parameters())[:-3], lr=0.0001)
+        steps = trange(
+            0,  # init_step = 0
+            n_steps,
+            initial=0,
+            total=n_steps,
+            desc='pretraining',
+            disable=None,
+        )
+
+        samples = initialize_samples(self.ne_atoms, self.atom_positions, n_samples).to(device=self.device, dtype=self.dtype)
+
+        for step in steps:
+            Es_loc, _, _ = local_energy(
+                samples,
+                wf.sample(False),
+                create_graph=False,
+                keep_graph=False,
+            )
+
+            samples = sampler(wf, self, samples)
+
+            up_dets, down_dets = self.hf_orbitals(samples)
+            up_dets = tile_labels(up_dets, wf.n_determinants)
+            down_dets = tile_labels(down_dets, wf.n_determinants)
+
+            wf.pretraining = True
+            model_up_dets, model_down_dets = wf(samples)
+            wf.pretraining = False
+
+            loss = mse_error(up_dets, model_up_dets)
+            loss += mse_error(down_dets, model_down_dets)
+            wf.zero_grad()
+            loss.backward()  # in order for hook to work must call backward
+            opt.step()
+            print('iteration: ', step, ' energy: ', Es_loc.mean())
+
